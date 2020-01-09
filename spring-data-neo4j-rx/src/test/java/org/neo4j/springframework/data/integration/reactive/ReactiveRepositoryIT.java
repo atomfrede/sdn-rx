@@ -36,6 +36,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.IntStream;
 
 import org.assertj.core.data.MapEntry;
@@ -52,14 +53,7 @@ import org.neo4j.driver.reactive.RxSession;
 import org.neo4j.driver.types.Node;
 import org.neo4j.driver.types.Point;
 import org.neo4j.springframework.data.config.AbstractReactiveNeo4jConfig;
-import org.neo4j.springframework.data.integration.shared.AnotherThingWithAssignedId;
-import org.neo4j.springframework.data.integration.shared.Club;
-import org.neo4j.springframework.data.integration.shared.Hobby;
-import org.neo4j.springframework.data.integration.shared.LikesHobbyRelationship;
-import org.neo4j.springframework.data.integration.shared.PersonWithAllConstructor;
-import org.neo4j.springframework.data.integration.shared.PersonWithRelationship;
-import org.neo4j.springframework.data.integration.shared.Pet;
-import org.neo4j.springframework.data.integration.shared.ThingWithAssignedId;
+import org.neo4j.springframework.data.integration.shared.*;
 import org.neo4j.springframework.data.repository.config.EnableReactiveNeo4jRepositories;
 import org.neo4j.springframework.data.test.Neo4jIntegrationTest;
 import org.neo4j.springframework.data.test.Neo4jExtension.*;
@@ -101,6 +95,8 @@ class ReactiveRepositoryIT {
 	@Autowired private ReactiveRelationshipRepository relationshipRepository;
 	@Autowired private ReactivePetRepository petRepository;
 	@Autowired private ReactivePersonWithRelationshipWithPropertiesRepository relationshipWithPropertiesRepository;
+	@Autowired private BidirectionalStartRepository bidirectionalStartRepository;
+	@Autowired private BidirectionalEndRepository bidirectionalEndRepository;
 	@Autowired private Driver driver;
 	@Autowired private ReactiveTransactionManager transactionManager;
 	private long id1;
@@ -265,6 +261,48 @@ class ReactiveRepositoryIT {
 				assertThat(petHobby.getName()).isEqualTo("Music");
 
 				assertThat(petHobby).isSameAs(hobby);
+			})
+			.verifyComplete();
+	}
+
+	@Test
+	void loadEntityWithBidirectionalRelationship() {
+
+		long startId;
+
+		try (Session session = driver.session()) {
+			Record record = session
+				.run("CREATE (n:BidirectionalStart{name:'Ernie'})-[:CONNECTED]->(e:BidirectionalEnd{name:'Bert'}) "
+					+ "RETURN n").single();
+
+			Node startNode = record.get("n").asNode();
+			startId = startNode.id();
+		}
+
+		StepVerifier.create(bidirectionalStartRepository.findById(startId))
+			.assertNext(entity -> {
+				assertThat(entity.getEnds()).hasSize(1);
+			})
+			.verifyComplete();
+	}
+
+	@Test
+	void loadEntityWithBidirectionalRelationshipFromIncomingSide() {
+
+		long endId;
+
+		try (Session session = driver.session()) {
+			Record record = session
+				.run("CREATE (n:BidirectionalStart{name:'Ernie'})-[:CONNECTED]->(e:BidirectionalEnd{name:'Bert'}) "
+					+ "RETURN e").single();
+
+			Node endNode = record.get("e").asNode();
+			endId = endNode.id();
+		}
+
+		StepVerifier.create(bidirectionalEndRepository.findById(endId))
+			.assertNext(entity -> {
+				assertThat(entity.getStart()).isNotNull();
 			})
 			.verifyComplete();
 	}
